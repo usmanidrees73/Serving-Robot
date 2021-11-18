@@ -1,0 +1,460 @@
+#include <SPI.h>
+#include <RFID.h>
+
+#define SDA_DIO 9
+#define RESET_DIO 8
+
+RFID RC522(SDA_DIO, RESET_DIO); 
+const byte rxAddr[6] = "00001";
+
+//wall following Sonar 1st 
+#define trigpin0 22
+#define echopin0 23
+//...........................................................................................................
+//wall following Sonar 2nd
+#define trigpin1 24
+#define echopin1 25
+// forward sonar..............................................................................................
+# define trigpin2 26 
+# define echopin2 27
+# define trigpin3 28
+# define echopin3 29
+# define trigpin4 30
+# define echopin4 31 
+// backward sonar...............................................................................................
+# define trigpin5 32 
+# define echopin5 33
+# define trigpin6 34
+# define echopin6 35
+# define trigpin7 36
+# define echopin7 37 
+//.............................................................................................................
+//left motor
+#define R_EN1 0
+#define L_EN1 1
+#define RPWM1 2
+#define LPWM1 3
+// right Motor
+#define R_EN2 4
+#define L_EN2 5
+#define RPWM2 6
+#define LPWM2 7
+#define default_location 2
+//..........................................variables...............................
+const int LF=129;
+const int RF=143;
+const int LB=129;
+const int RB=143;
+long d1,d4;
+char data;
+boolean flag=false;
+char robot;
+bool door=false;
+bool get_next=false;
+int pwml,pwmr;
+int error;
+float kp;
+float kp1;
+int present=1;
+int dest=1;
+int prev_d;
+const unsigned char tag[7][5]={{94,177,26,43,222},{22,73,27,43,111},{166,183,26,43,32},{250,97,26,43,170},{195,67,26,43,177},{166,220,34,43,115},{92,161,176,213,152}};
+
+//..................................................................................................
+void setup() {
+
+  Serial.begin(9600);
+  Serial1.begin(9600);
+
+    SPI.begin(); 
+  /* Initialise the RFID reader */
+  RC522.init();
+
+  pinMode(trigpin0,OUTPUT);
+  pinMode(trigpin1,OUTPUT);
+  pinMode(trigpin2,OUTPUT);
+  pinMode(trigpin3,OUTPUT);
+  pinMode(trigpin4,OUTPUT);
+  pinMode(trigpin5,OUTPUT);
+  pinMode(trigpin6,OUTPUT);
+  pinMode(trigpin7,OUTPUT);
+  
+  pinMode(echopin0,INPUT);
+  pinMode(echopin1,INPUT);
+  pinMode(echopin2,INPUT);
+  pinMode(echopin3,INPUT);
+  pinMode(echopin4,INPUT);
+  pinMode(echopin5,INPUT);
+  pinMode(echopin6,INPUT);
+  pinMode(echopin7,INPUT);
+
+  TCCR3B = TCCR3B & 0b11111000 | 0x02;
+  TCCR4B = TCCR4B & 0b11111000 | 0x02;
+
+  // left Motor
+  pinMode(R_EN1,OUTPUT);
+  pinMode(L_EN1,OUTPUT);
+  pinMode(RPWM1,OUTPUT);
+  pinMode(LPWM1,OUTPUT);
+  // right Motor
+  pinMode(R_EN2,OUTPUT);
+  pinMode(L_EN2,OUTPUT);
+  pinMode(RPWM2,OUTPUT);
+  pinMode(LPWM2,OUTPUT);
+  prev_d=distance(trigpin0,echopin0);
+  error=0;
+  pwml= 139;
+  pwmr=143;
+  kp=21;
+  kp1 = 21;
+  dest=default_location ;
+  Manager();
+}
+
+void loop()
+{
+ 
+ if(any_hurdle())
+ {
+    Stop();
+    while(any_hurdle())
+        delay(313);
+    
+    while(any_hurdle())
+        delay(313);
+
+    while(any_hurdle())
+        delay(313);
+
+    while(any_hurdle())
+        delay(313);
+    
+    while(any_hurdle())
+        delay(313);
+
+    while(any_hurdle())
+        delay(313);
+
+    while(any_hurdle())
+        delay(313);
+    
+    Direction();
+ }
+
+  
+  if(get_next)
+  {
+    if (Serial.available()) {
+    data = Serial.read();
+    switch(data)
+    {
+      case '1': dest=0;break;
+      case '2': dest=1;break;
+      case '3': dest=2;break;
+      case '4': dest=3;break;
+      case '5': dest=4;break;
+      case '6': dest=5;break;
+      
+    }
+    Serial.println(dest);
+    }
+    else
+    dest=default_location;
+    get_next=false;
+    Manager();
+  }
+
+    if(robot=='f') //forward
+    {
+      d4=distance(trigpin0,echopin0);
+      if(d4-prev_d>=15)
+      {
+        door=true;
+        analogWrite(RPWM1,LF);
+        analogWrite(RPWM2,RF);
+      }
+        if(prev_d-d4<15)
+          door=false;
+           
+         if(RC522.isCard())
+        {
+         RC522.readCardSerial();
+
+         int count=0;
+       for(int i=0;i<5;i++)
+      {
+        if(RC522.serNum[i]==tag[dest][i])
+            count++;
+      
+       }     
+       if(count==5)
+         {
+  
+            Stop();
+            present=dest;
+            delay(5000);    
+            get_next=true;      
+          }
+            else  
+            present++; 
+        }
+
+     if(!door)
+     {
+     error = d4 - 26;
+    if(error>=2 || error<=-2 )    
+    {
+    error = kp*error;
+    pwml= pwml+error;
+    if(pwml>200)
+      pwml=200;
+    else  if(pwml<0)
+      pwml=0;
+      analogWrite(RPWM1,pwml);
+    }
+    else
+     {
+      analogWrite(RPWM1,LF);
+      analogWrite(RPWM2,RF);
+     }
+     }
+     prev_d=d4;
+}
+      else if(robot=='b')
+    {
+     d4=distance(trigpin1,echopin1);  
+      if(d4-prev_d>=15)
+      {
+        door=true;
+        analogWrite(RPWM1,LF);
+        analogWrite(RPWM2,RF);
+      }
+      if(prev_d-d4<15)
+          door=false;
+      if(RC522.isCard())
+        {
+         RC522.readCardSerial();
+         int count=0;
+       for(int i=0;i<5;i++)
+      {
+              
+        if(RC522.serNum[i]==tag[dest][i])
+            count++;
+       }     
+       if(count==5)
+       {
+          Stop();
+          present=dest;
+          delay(5000);    
+          get_next=true;      
+        }
+          else  
+            present--; 
+        }
+      
+    if(!door)
+   {
+    error = d4 - 26;
+   
+    if(error>2 || error<-2 )    
+    {
+           error = kp1*error;
+      pwml= pwml+error;
+      if(pwml<0)
+        pwml=0;
+      else if(pwml>200)
+        pwml=200;
+      analogWrite(LPWM1,pwml);
+     }
+    else
+       {
+      analogWrite(LPWM1,LB);
+      analogWrite(LPWM2,RB);
+      pwml=LB;
+     }
+   }
+     prev_d=d4;
+    
+  } 
+
+     if(present==dest)
+        get_next=true;
+     else
+        get_next=false;
+ 
+  delay(313);  
+}
+
+void Forward()
+{
+  
+  // left Motor
+  digitalWrite(R_EN1,HIGH);
+  delay(10);
+  digitalWrite(L_EN1,HIGH);
+  delay(10);
+  // right Motor
+  digitalWrite(R_EN2,HIGH);
+  delay(10);
+  digitalWrite(L_EN2,HIGH);
+  delay(10);
+  
+  digitalWrite(LPWM1,LOW);
+  delay(10);
+  digitalWrite(LPWM2,LOW);
+  delay(10);
+  //left Motor
+  analogWrite(RPWM1,LF);
+  //right motoru
+  analogWrite(RPWM2,RF);
+}
+
+void Stop()
+{
+  digitalWrite(R_EN1,LOW);
+  digitalWrite(L_EN1,LOW);
+  digitalWrite(LPWM1,LOW);
+  // Left Motor
+  digitalWrite(R_EN2,LOW);
+  digitalWrite(L_EN2,LOW);
+  digitalWrite(LPWM2,LOW);
+  //left Motor
+  analogWrite(RPWM1,0);
+  //Right motor
+  analogWrite(RPWM2,0);
+}
+
+boolean any_hurdle()
+{
+
+if(robot=='f')
+{
+  d1=obstacle(trigpin2,echopin2);  
+ if(d1<30)
+    return true;
+
+  d1=obstacle(trigpin3,echopin3);  
+   if(d1<30)
+     return true;
+
+ d1=obstacle(trigpin4,echopin4);
+   if(d1<30)
+        return true;
+  
+   return false;
+ }
+ else if(robot=='b') 
+ {
+   d1=obstacle(trigpin5,echopin5);
+ if(d1<30)
+    return true;
+
+  d1=obstacle(trigpin6,echopin6);  
+   if(d1<30)
+     return true;
+
+ d1=obstacle(trigpin7,echopin7);
+   if(d1<30)
+        return true;
+
+  
+   return false;
+
+ }
+}
+
+long distance(const int trigPin,const int echoPin)
+{
+  long duration,cm;
+
+ // pinMode(trigPin, OUTPUT);
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+ // pinMode(echoPin, INPUT);
+  duration = pulseIn(echoPin,HIGH);
+
+  cm = microsecondsToCentimeters(duration);
+
+  return cm;
+}
+
+long obstacle(const int trigPin,const int echoPin)
+{
+  long duration,cm;
+
+ // pinMode(trigPin, OUTPUT);
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+ // pinMode(echoPin, INPUT);
+  duration = pulseIn(echoPin,HIGH,10000);
+  if(duration ==0 )
+      return 50;
+      else
+  cm = microsecondsToCentimeters(duration);
+
+  return cm;
+}
+
+
+long microsecondsToCentimeters(long microseconds)
+{
+  return microseconds / 29 / 2;
+}
+
+void backward()
+{
+  
+  digitalWrite(R_EN1,HIGH);
+  delay(10);  
+  digitalWrite(L_EN1,HIGH);
+  delay(10);
+//...........................................................................................
+  digitalWrite(R_EN2,HIGH);
+  delay(10);
+  digitalWrite(L_EN2,HIGH);
+  delay(10);
+//.............................................................................................
+  digitalWrite(RPWM1,LOW);
+  delay(10);
+  digitalWrite(RPWM2,LOW);
+  delay(10);
+  //left Motor
+  analogWrite(LPWM1,LB);
+  //right motor
+  analogWrite(LPWM2,RB);
+}
+
+void Direction()
+{
+  if(robot=='f')
+    Forward();
+  else if(robot=='b')
+    backward();
+    else
+    Stop();
+}
+
+void Manager()
+{
+  if(present-dest==0)
+    robot='s';
+  else if(present-dest<0)
+      robot='f';
+  else
+      robot='b';
+      Direction();
+}
+//.........................................
+// RFID Tag DATA
+//card 1: 94 177 26 43 222
+//card 2: 22 73 27 43 111
+//card 3: 166 183 26 43 32
+//card 4: 250 97 26 43 170
